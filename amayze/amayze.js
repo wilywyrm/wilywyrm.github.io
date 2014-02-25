@@ -403,6 +403,9 @@ function toggleAuto(){
 		autopilot = "disabled";
 	$.cookie("autopilot", autopilot, {expires: 9999});
 	$('#autoIndicator').text("Autopilot is " + $.cookie("autopilot"));
+	if(autopilot === "enabled"){
+		window.location.reload(true); // start auto immediately
+	}
 	//console.log("yo");
 }
 

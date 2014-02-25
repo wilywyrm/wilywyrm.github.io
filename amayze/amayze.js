@@ -47,7 +47,7 @@ function init(){
 		//var enableStr = "enable" + num;
 		do{
 			accounts[num] = {accessID: $.cookie(idStr), secret: $.cookie(secretStr)/*, enabled: $.cookie(enableStr)*/};
-			idHTML += "<br /><input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" value=\"" + $.cookie(idStr) + "\" onblur=\"updateAccts()\">";
+			idHTML += "<br />"+ num + " <input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" value=\"" + $.cookie(idStr) + "\" onblur=\"updateAccts()\">";
 			secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"" + secretStr + "\" name=\"" + secretStr + "\" value=\"" + $.cookie(secretStr) + "\" onblur=\"updateAccts()\">";
 			//enableHTML += "<br /><input type=\"checkbox\" id=\"" + enableStr + "\" name=\"" + enableStr + "\" checked=\"" + $.cookie(enableStr) + "\" onclick=\"updateAccts()\">";
 			num++;
@@ -60,7 +60,7 @@ function init(){
 	}		
 	else{
 		//console.log("hi");
-		idHTML += "<br /><input type=\"text\" size=\"30\" id=\"accessID0\" name=\"accessID0\" onblur=\"updateAccts()\">";
+		idHTML += "<br />0 <input type=\"text\" size=\"30\" id=\"accessID0\" name=\"accessID0\" onblur=\"updateAccts()\">";
 		secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"secret0\" name=\"secret0\" onblur=\"updateAccts()\">";
 		//enableHTML += "<br /><input type=\"checkbox\" id=\"enable0\" name=\"enable0\" checked=\"true\" onclick=\"updateAccts()\">";
 	}
@@ -123,6 +123,11 @@ function init(){
 		if(accountIndex >= accounts.length){
 			accountIndex = 0;
 			stop = true; // yeah this doesn't really function as it should, it doesn't cycle through all accounts before stopping, just need to stop the infinite loop
+			console.log("hi");
+			if(autopilot === "canceling"){
+				autopilot = "disabled";
+				$('#autoIndicator').text("Autopilot is " + autopilot);	
+			}
 		}
 	}
 	console.log(accounts[accountIndex]);
@@ -137,16 +142,16 @@ function init(){
 	
 	var deferred = refreshPrices();
 	deferred.done(function(){
-		if(autopilot === "enabled"){
-			setTimeout(function(){
-				window.location.reload(1);
-			}, 60000);
+		if(!(autopilot === "disabled")){
 			autoPilot();
 		}
-		else if(autopilot === "canceling"){
-			accountIndex = 0;
-			cancelHelper();
-		}
+		setTimeout(function(){
+			window.location.reload(1);
+		}, 60000);
+		//else if(autopilot === "canceling"){
+		//	accountIndex = 0;
+		//	cancelHelper();
+		//}
 	});
 }
 
@@ -270,7 +275,8 @@ function addRows(){
 	var idStr = "accessID" + numAccounts;
 	var secretStr = "secret" + numAccounts;
 	//var enableStr = "enable" + numAccounts;
-	var idHTML = "<br /><input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" onblur=\"updateAccts()\">";
+	// numAccounts doubles as current index
+	var idHTML = "<br />"+ numAccounts + " <input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" onblur=\"updateAccts()\">";
 	var secretHTML = "<br /><input type=\"text\" size=\"50\" id=\"" + secretStr + "\" name=\"" + secretStr + "\" onblur=\"updateAccts()\">";
 	//var enableHTML = "<br /><input type=\"checkbox\" id=\"" + enableStr + "\" name=\"" + enableStr + "\" checked=\"true\" onclick=\"updateAccts()\">";
 	$.cookie(idStr, "", {expires: 9999});
@@ -301,7 +307,7 @@ function updateAccts(){
 		//console.log($.cookie(idStr));
 		//$.cookie(enableStr, document.getElementById(enableStr).checked);
 		//console.log(document.getElementById(enableStr).checked);
-		idHTML += "<br /><input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" value=\"" + document.getElementById(idStr).value + "\" onblur=\"updateAccts()\">";
+		idHTML += "<br />"+ num + " <input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" value=\"" + document.getElementById(idStr).value + "\" onblur=\"updateAccts()\">";
 		secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"" + secretStr + "\" name=\"" + secretStr + "\" value=\"" + document.getElementById(secretStr).value + "\" onblur=\"updateAccts()\">";
 		//enableHTML += "<br /><input type=\"checkbox\" id=\"" + enableStr + "\" name=\"" + enableStr + "\" checked=\"" + document.getElementById(enableStr).checked + "\" onclick=\"updateAccts()\">";
 		num++;
@@ -382,6 +388,8 @@ function setAccIndex(){
 }
 
 function cancelAll(){
+	accountIndex = 0;
+	$.cookie("accountIndex", accountIndex, {expires: 9999});
 	$.cookie("autopilot", "canceling", {expires: 9999});
 	$('#autoIndicator').text("Autopilot is " + $.cookie("autopilot"));
 }
@@ -423,10 +431,13 @@ function autoPilot(){
 							if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
 								inUnderList = true;
 						}
-						if(parseFloat(thisReq.SpotPrice) != cartelPrice || (underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && (thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || (thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
+						if(autopilot === "canceling" || parseFloat(thisReq.SpotPrice) != cartelPrice || (underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && (thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || (thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
 							totalSpots--;
 							requestsToCancel.push(thisReq.SpotInstanceRequestId);
-							//console.log(thisReq.InstanceId);
+							if(autopilot === "canceling" && thisReq.State === "active"){
+								//console.log(thisReq.InstanceId);
+								instToTerm.push(thisReq.InstanceId);
+							}
 							/*if(parseFloat(thisReq.SpotPrice) > cartelPrice && thisReq.InstanceId != undefined){
 								instToTerm.push(thisReq.InstanceId);
 							}*/
@@ -461,7 +472,7 @@ function autoPilot(){
 	}
 	
 	dfd.done(function(){
-		if(totalSpots < 10 && underPrice.length > 0){
+		if(totalSpots < 10 && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
 			console.log("account " + accountIndex + " used to have " + totalSpots);
 			var reg = 0;
@@ -479,7 +490,9 @@ function autoPilot(){
 			ec2 = new AWS.EC2({region: regions[reg]});
 			
 			//console.log(reg);
-			
+			/*ec2.describeAccountAttributes(function(err, data){
+				console.log(data);
+			});*/
 			// spot instance request parameters
 			var spotParams = {
 				SpotPrice: ("" + cartelPrice), // "" to make cartelPrice into a string
@@ -495,25 +508,56 @@ function autoPilot(){
 				}
 			};
 			
-			ec2.requestSpotInstances(spotParams, function(err, data){
-				if(err){
-					console.log(err);
-					//if(err.code === "MaxSpotInstanceCountExceeded"){ // dirty temporary hack, replace with recursive solution eventually
-					//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
-					//}
-				}
-				else
-					console.log(data);
-				//console.log("account " + accountIndex + ", 10");
-			});
+			makeSpot(spotParams, 0);
+			
+			//var temp = makeSpot(spotParams);
+			//while(makeSpot(spotParams).code === "MaxSpotInstanceCountExceeded" && underPrice.length > 1 && zoneIndex < underPrice.length){
+				
+			//}
 		}
 		//else
 			//console.log("account " + accountIndex )
 		accountIndex++;
-		if(accountIndex >= accounts.length)
+		if(accountIndex >= accounts.length){
+			console.log("hi");
 			accountIndex = 0;
+			if(autopilot === "canceling")
+				autopilot = "disabled";
+		}
 		$.cookie("accountIndex", accountIndex, {expires: 9999});
+		$.cookie("autopilot", autopilot, {expires: 9999});
 	});
 	
 	return dfd;
+}
+
+function makeSpot(spotParams, zoneIndex){
+	//var zoneIndex = 0;
+	console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
+	ec2.requestSpotInstances(spotParams, function(err, data){
+		if(err){
+			console.log(err);
+			zoneIndex++;
+			if(zoneIndex < underPrice.length){
+				for(var i = 0; i < regions.length; i++){
+					if(spotParams.LaunchSpecification.Placement.AvailabilityZone.indexOf(regions[i]) != -1)
+						reg = i;
+				}
+				
+				spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[zoneIndex].zone;
+				spotParams.LaunchSpecification.ImageId = (underPrice[zoneIndex].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg];
+				makeSpot(spotParams, zoneIndex);
+			}
+			//return err;
+			//if(){
+			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
+			//}
+		}
+		else{
+			console.log(data);
+			//return null;
+		}
+		
+		//console.log("account " + accountIndex + ", 10");
+	});
 }

@@ -123,7 +123,7 @@ function init(){
 		if(accountIndex >= accounts.length){
 			accountIndex = 0;
 			stop = true; // yeah this doesn't really function as it should, it doesn't cycle through all accounts before stopping, just need to stop the infinite loop
-			console.log("hi");
+			//console.log("hi");
 			if(autopilot === "canceling"){
 				autopilot = "disabled";
 				$('#autoIndicator').text("Autopilot is " + autopilot);	
@@ -146,7 +146,7 @@ function init(){
 			autoPilot();
 		}
 		setTimeout(function(){
-			window.location.reload(1);
+			window.location.reload(true);
 		}, 60000);
 		//else if(autopilot === "canceling"){
 		//	accountIndex = 0;
@@ -351,7 +351,7 @@ function updateUserData(){
 	$.cookie("userData", userData, {expires: 9999});
 }
 
-function cancelHelper(){
+/*function cancelHelper(){
 	var dfd = $.Deferred;
 	var ecs = [];
 	
@@ -381,6 +381,7 @@ function cancelHelper(){
 		});
 	}
 }
+*/
 
 function setAccIndex(){
 	accountIndex = document.getElementById("setIndex").value;
@@ -392,6 +393,7 @@ function cancelAll(){
 	$.cookie("accountIndex", accountIndex, {expires: 9999});
 	$.cookie("autopilot", "canceling", {expires: 9999});
 	$('#autoIndicator').text("Autopilot is " + $.cookie("autopilot"));
+	window.location.reload(true);
 }
 
 function toggleAuto(){
@@ -519,13 +521,18 @@ function autoPilot(){
 			//console.log("account " + accountIndex )
 		accountIndex++;
 		if(accountIndex >= accounts.length){
-			console.log("hi");
+			//console.log("hi");
 			accountIndex = 0;
-			if(autopilot === "canceling")
+			if(autopilot === "canceling"){
 				autopilot = "disabled";
+			}
 		}
 		$.cookie("accountIndex", accountIndex, {expires: 9999});
 		$.cookie("autopilot", autopilot, {expires: 9999});
+		
+		if(autopilot === "canceling"){
+			window.location.reload(true);
+		}
 	});
 	
 	return dfd;

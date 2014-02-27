@@ -401,6 +401,9 @@ function toggleAuto(){
 		autopilot = "enabled";
 	else if(autopilot === "enabled")
 		autopilot = "disabled";
+	else if(autopilot === "canceling")
+		autopilot = "enabled";
+		
 	$.cookie("autopilot", autopilot, {expires: 9999});
 	$('#autoIndicator').text("Autopilot is " + $.cookie("autopilot"));
 	if(autopilot === "enabled"){
@@ -416,6 +419,7 @@ function autoPilot(){
 	var dfd = $.Deferred();
 	var requests = 0;
 	var totalSpots = 0;
+	var totalInst = 0;
 	var requestsToCancel = []; // if the previous spot price > current cartel price
 	var instToTerm = [];	   // associated instance IDs for requests fulfilled
 	
@@ -423,6 +427,17 @@ function autoPilot(){
 		requests++;
 		ecs[i] = new AWS.EC2({region: regions[i]});
 		//console.log(i);
+		ecs[i].describeInstances(function(err,data){
+			console.log(data);	
+			for(var i = 0; i < data.Reservations.length; i++){
+				if(data.Reservations[i].Instances[0].State.Name === "running"){
+					totalInst++;
+					if(autopilot === "canceling")
+						instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
+				}
+			}
+		});
+		
 		ecs[i].describeSpotInstanceRequests(function(err, data){
 			console.log(data);
 			requests--;
@@ -432,6 +447,8 @@ function autoPilot(){
 					if((thisReq.State === "open" || thisReq.State === "active") /*&& (thisReq.LaunchSpecification.Placement.AvailabilityZone === )*/){
 						totalSpots++;
 						var inUnderList = false;
+						//if(thisReq.State === "active")
+							//totalInst++;
 						for(var ind = 0; ind < underPrice.length; ind++){
 							if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
 								inUnderList = true;
@@ -477,9 +494,10 @@ function autoPilot(){
 	}
 	
 	dfd.done(function(){
-		if(totalSpots < 10 && underPrice.length > 0 && autopilot === "enabled"){
+		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
+		if(totalSpots + totalInst < 10 && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
-			console.log("account " + accountIndex + " used to have " + totalSpots);
+			
 			var reg = 0;
 			var a = 0;
 			while(a < regions.length){
@@ -501,7 +519,7 @@ function autoPilot(){
 			// spot instance request parameters
 			var spotParams = {
 				SpotPrice: ("" + cartelPrice), // "" to make cartelPrice into a string
-				InstanceCount: 10 - totalSpots,
+				InstanceCount: 10 - totalSpots - totalInst,
 				Type: "one-time",
 				LaunchSpecification : {
 					ImageId: (underPrice[0].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg], 
@@ -534,7 +552,10 @@ function autoPilot(){
 		$.cookie("autopilot", autopilot, {expires: 9999});
 		
 		if(autopilot === "canceling"){
-			window.location.reload(true);
+			setTimeout(function(){
+				window.location.reload(true);
+			}, 5000); // 5s delay before next account
+			
 		}
 	});
 	

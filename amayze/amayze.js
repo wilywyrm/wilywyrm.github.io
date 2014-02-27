@@ -430,7 +430,7 @@ function autoPilot(){
 		ecs[i].describeInstances(function(err,data){
 			console.log(data);	
 			for(var i = 0; i < data.Reservations.length; i++){
-				if(data.Reservations[i].Instances[0].State.Name === "running"){
+				if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
 					totalInst++;
 					if(autopilot === "canceling")
 						instToTerm.push(data.Reservations[i].Instances[0].InstanceId);

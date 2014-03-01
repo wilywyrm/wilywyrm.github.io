@@ -218,14 +218,16 @@ function refreshPrices(){
 									regionZones.splice(index, 0, aZones[b]);
 									// placement of this isn't crucial, would evaluate outside of if, 
 									// 	but this causes less comparisons
+									/*
 									if(aZones[b].os === ("Linux/UNIX") && (lowestLin == null || aZones[b].price < lowestLin.price)){
 										lowestLin = aZones[b];
 										//console.log("hi");
 									} 
 									else if(aZones[b].os === ("Windows") && (lowestWin == null || aZones[b].price < lowestWin.price)){
 										lowestWin = aZones[b];
+									
 									}
-									//console.log("eng");
+									*/
 								}
 							}
 							sortedZones.push(regionZones);
@@ -242,11 +244,15 @@ function refreshPrices(){
 						}
 						console.log(sortedZones);
 						console.log(underPrice);
-						console.log(lowestLin);
-						console.log(lowestWin);
+						//console.log(lowestLin);
+						//console.log(lowestWin);
+						priceText += "Prices at or below the threshold are: <br /> ";
+						// + lowestLin.price + " for " + lowestLin.os + " in " + lowestLin.zone + "<br />";
+						for(var c = 0; c < underPrice.length; c++){
+							priceText += underPrice[c].price + " for " + underPrice[c].os + " in " + underPrice[c].zone + "<br />";
+						}
 						
-						priceText += "Lowest prices are <br /> " + lowestLin.price + " for " + lowestLin.os + " in " + lowestLin.zone + "<br />";
-						priceText += lowestWin.price + " for " + lowestWin.os + " in " + lowestWin.zone + "<br />";
+						//priceText += lowestWin.price + " for " + lowestWin.os + " in " + lowestWin.zone + "<br />";
 						
 						for(var c = 0; c < sortedZones.length; c++){
 							priceText += "<br />Region: " + regions[c] + "<br />";
@@ -416,30 +422,63 @@ function autoPilot(){
 	// super cool AI shit
 	//if(underPrice.length > 0){
 	var ecs = [];
+	var clouds = [];
 	var dfd = $.Deferred();
 	var requests = 0;
 	var totalSpots = 0;
 	var totalInst = 0;
+	var allInst = [];
 	var requestsToCancel = []; // if the previous spot price > current cartel price
 	var instToTerm = [];	   // associated instance IDs for requests fulfilled
 	
 	for(var i = 0; i < regions.length; i++){
 		requests++;
 		ecs[i] = new AWS.EC2({region: regions[i]});
+		clouds[i] = new AWS.CloudWatch({region: regions[i]});
+		//clouds[i].listMetrics({Namespace: "AWS/EC2", MetricName: "CPUUtilization"},function(err,data){
+		//	console.log(data);
+		//});
 		//console.log(i);
 		ecs[i].describeInstances(function(err,data){
-			console.log(data);	
+			if(data.Reservations.length > 0){
+				console.log(data.Reservations[0].Instances[0].Placement.AvailabilityZone, data);	
+			}
+			
 			for(var i = 0; i < data.Reservations.length; i++){
 				if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
+					allInst.push(data.Reservations[i].Instances[0].InstanceId);
 					totalInst++;
 					if(autopilot === "canceling")
 						instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
 				}
 			}
+			var params = {
+				Namespace: "AWS/EC2",
+				MetricName: "CPUUtilization",
+				Dimensions: [
+					{
+						"Name": "InstanceId",
+						"Value": ""
+					}
+				],
+				Period: 300, // 5 minutes
+				Statistics: ["Average"],
+				Unit: "Percent"
+			};
+			/*clouds[i].getMetricStatistics(params, function(err, data){
+				console.log(err);
+				console.log(data);
+				// how do we prevent the restart-loop, where we detect <50% CPU usage and restart,
+				// then next time we check (worst case 1 minute), we restart again because the restart just took place
+				// since it takes 15 minutes for windows instances to reach full CPU usage?
+			});*/
 		});
 		
 		ecs[i].describeSpotInstanceRequests(function(err, data){
-			console.log(data);
+			if(data.SpotInstanceRequests.length > 0){
+				console.log(data.SpotInstanceRequests[0].LaunchSpecification.Placement.AvailabilityZone, data);
+			}
+			
 			requests--;
 			for(var a = 0; a < data.SpotInstanceRequests.length; a++){
 				var thisReq = data.SpotInstanceRequests[a];
@@ -486,8 +525,8 @@ function autoPilot(){
 				}
 			}
 			if(requests == 0){
-				console.log(requestsToCancel);
-				console.log(instToTerm);
+				console.log("cancel requests: ", requestsToCancel);
+				console.log("cancel instances: ",instToTerm);
 				dfd.resolve();
 			}
 		});
@@ -495,13 +534,29 @@ function autoPilot(){
 	
 	dfd.done(function(){
 		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
-		if(totalSpots + totalInst < 10 && underPrice.length > 0 && autopilot === "enabled"){
+		if(totalSpots < 10 && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
 			
 			var reg = 0;
+			var aZone = 0;
 			var a = 0;
+			
+			var allSame = true;
+			for(var b = 0; b < underPrice.length; b++){
+				for(var c = b+1; c < underPrice.length; c++){
+					if(underPrice[b].price != underPrice[c].price)
+						allSame = false;
+				}
+				//console.log("hi");
+			}
+			
+			if(allSame){
+				aZone = Math.floor(Math.random() * underPrice.length);
+				console.log("All same price, we used zone " + underPrice[aZone].zone);
+			}
+			
 			while(a < regions.length){
-				if(underPrice[0].zone.indexOf(regions[a]) != -1){
+				if(underPrice[aZone].zone.indexOf(regions[a]) != -1){
 					reg = a;
 					//console.log(a);
 				}
@@ -512,34 +567,24 @@ function autoPilot(){
 			// init ec2 in region
 			ec2 = new AWS.EC2({region: regions[reg]});
 			
-			//console.log(reg);
-			/*ec2.describeAccountAttributes(function(err, data){
-				console.log(data);
-			});*/
 			// spot instance request parameters
 			var spotParams = {
 				SpotPrice: ("" + cartelPrice), // "" to make cartelPrice into a string
-				InstanceCount: 10 - totalSpots - totalInst,
+				InstanceCount: 10 - totalSpots,
 				Type: "one-time",
 				LaunchSpecification : {
-					ImageId: (underPrice[0].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg], 
+					ImageId: (underPrice[aZone].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg], 
 					InstanceType : "g2.2xlarge",
 					UserData: btoa(userData), // ec2 expects userdata encoded with base64
 					Placement: {
-						AvailabilityZone: underPrice[0].zone
+						AvailabilityZone: underPrice[aZone].zone
 					}
 				}
 			};
 			
 			makeSpot(spotParams, 0);
-			
-			//var temp = makeSpot(spotParams);
-			//while(makeSpot(spotParams).code === "MaxSpotInstanceCountExceeded" && underPrice.length > 1 && zoneIndex < underPrice.length){
-				
-			//}
 		}
-		//else
-			//console.log("account " + accountIndex )
+
 		accountIndex++;
 		if(accountIndex >= accounts.length){
 			//console.log("hi");
@@ -564,6 +609,7 @@ function autoPilot(){
 
 function makeSpot(spotParams, zoneIndex){
 	//var zoneIndex = 0;
+	var reg = 0;
 	console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
 	ec2.requestSpotInstances(spotParams, function(err, data){
 		if(err){
@@ -585,7 +631,7 @@ function makeSpot(spotParams, zoneIndex){
 			//}
 		}
 		else{
-			console.log(data);
+			console.log("made requests: ", data);
 			//return null;
 		}
 		

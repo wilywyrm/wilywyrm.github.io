@@ -1,20 +1,13 @@
 var accounts = [];
 var numAccounts = 0;
-// r.z, rz, dot1, dot2, dot3, dot4, ill, r.ufei.z, ru.fei.z, ruf.ei.z
-// r.u.feiz, r.u.f.eiz, r.u.f.e.iz, r.u.f.e.i.z, r.u.fei.z, r.u.f.ei.z
-// r.u.fe.i.z
 var regions = ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"];
 // in format: east1, west2, west1, euwest1 
-var linAMIs = [] /*= ["ami-11c4fc78", "ami-08c9aa38", "ami-96dce1d3", "ami-b49465c3"]*/;
-var winAMIs = [] /*= ["ami-e99da480", "ami-de7310ee", "ami-962c11d3", "thereIsNoAMIHere"]*/;
+var linAMIs = [];
+var winAMIs = [];
 
 
 // startup script for windows configuration
-var userData; /*= '<script>\n' + 
-			'echo C:\\Doge\\dogecoinminer\\minerd.exe -a scrypt --url=stratum+tcp://us-east.multipool.us:3352 -u rufeiz.amazonc -p x > C:\\startcpu.bat \n' +
-			'echo C:\\Doge\\cudaminer\\x64\\cudaminer.exe -o stratum+tcp://us-east.multipool.us:3352 -u rufeiz.amazong -p x -i 0 -l K16x16 > C:\\startcuda.bat \n' +
-			'<\/script>';
-*/
+var userData;
 var cartelPrice = .1;
 var underPrice = [];
 var autopilot = "disabled";
@@ -642,7 +635,7 @@ function makeSpot(spotParams, numSpots){
 			//return null;
 		}
 		else{
-			console.lpg("Failed to make instances");
+			console.log("Failed to make instances");
 		}
 		
 		//console.log("account " + accountIndex + ", 10");

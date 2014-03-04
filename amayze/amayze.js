@@ -64,7 +64,7 @@ function init(){
 		secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"secret0\" name=\"secret0\" onblur=\"updateAccts()\">";
 		//enableHTML += "<br /><input type=\"checkbox\" id=\"enable0\" name=\"enable0\" checked=\"true\" onclick=\"updateAccts()\">";
 	}
-	console.log(accounts);
+	//console.log(accounts);
 	
 	if($.cookie("userData") !== undefined){
 		userData = $.cookie(userData);
@@ -357,38 +357,6 @@ function updateUserData(){
 	$.cookie("userData", userData, {expires: 9999});
 }
 
-/*function cancelHelper(){
-	var dfd = $.Deferred;
-	var ecs = [];
-	
-	if(accountIndex < accounts.length){
-		while(accountIndex < accounts.length && (document.getElementById("accessID" + accountIndex).value === "" || document.getElementById("secret" + accountIndex).value === ""))
-			accountIndex++;
-			
-		AWS.config.update({accessKeyId: accounts[accountIndex].accessID, secretAccessKey: accounts[accountIndex].secret, region: regions[0]});
-		
-		for(regionIndex = 0; regionIndex < regions.length; regionIndex++){
-			ecs.push(new AWS.EC2({region: regions[regionIndex]}));
-			
-			ecs[regionIndex].describeAvailabilityZones(function(err, data){
-				//console.log(err);
-				//console.log(data);
-				for(var i = 0; i < data.AvailabilityZones.length*2; i++){ // length * 2 to check for linux and windows
-					numRequests++;
-					
-				}
-		
-			});
-		}
-	
-		dfd.done(function(){
-			if(accountIndex < accounts.length)
-				cancelHelper();
-		});
-	}
-}
-*/
-
 function setAccIndex(){
 	accountIndex = document.getElementById("setIndex").value;
 	$.cookie("accountIndex", accountIndex, {expires: 9999});
@@ -439,18 +407,36 @@ function autoPilot(){
 		//	console.log(data);
 		//});
 		//console.log(i);
-		ecs[i].describeInstances(function(err,data){
+		var filterParams = {
+			Filters: [
+				{
+					"Name": "instance-type",
+					"Values": ["g2.2xlarge"]
+				},
+				{
+					"Name": "instance-lifecycle",
+					"Values": ["spot"]
+				},
+				{
+					"Name": "instance-state-name",
+					"Values": ["running", "pending"]
+				}
+			]
+		};
+		ecs[i].describeInstances(filterParams, function(err,data){
+			//console.log(data);
+			//console.log(err);
 			if(data.Reservations.length > 0){
 				console.log(data.Reservations[0].Instances[0].Placement.AvailabilityZone, data);	
 			}
 			
 			for(var i = 0; i < data.Reservations.length; i++){
-				if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
-					allInst.push(data.Reservations[i].Instances[0].InstanceId);
-					totalInst++;
-					if(autopilot === "canceling")
-						instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
-				}
+				//if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
+				allInst.push(data.Reservations[i].Instances[0].InstanceId);
+				totalInst++;
+				if(autopilot === "canceling")
+					instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
+				//}
 			}
 			var params = {
 				Namespace: "AWS/EC2",
@@ -474,59 +460,78 @@ function autoPilot(){
 			});*/
 		});
 		
-		ecs[i].describeSpotInstanceRequests(function(err, data){
+		filterParams = {
+			Filters: [
+				{
+					"Name": "launch.instance-type",
+					"Values": ["g2.2xlarge"]
+				},
+				{
+					"Name": "state",
+					"Values": ["open", "active"]
+				}
+			]
+		};
+		
+		ecs[i].describeSpotInstanceRequests(filterParams, function(err, data){
 			if(data.SpotInstanceRequests.length > 0){
 				console.log(data.SpotInstanceRequests[0].LaunchSpecification.Placement.AvailabilityZone, data);
+				for(var a = 0; a < data.SpotInstanceRequests.length; a++){
+					var thisReq = data.SpotInstanceRequests[a];
+					//if(thisReq.LaunchSpecification.InstanceType === "g2.2xlarge"){
+						//if((thisReq.State === "open" || thisReq.State === "active") /*&& (thisReq.LaunchSpecification.Placement.AvailabilityZone === )*/){
+							totalSpots++;
+							var inUnderList = false;
+							//if(thisReq.State === "active")
+								//totalInst++;
+							for(var ind = 0; ind < underPrice.length; ind++){
+								if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
+									inUnderList = true;
+							}
+							if(autopilot === "canceling" || parseFloat(thisReq.SpotPrice) != cartelPrice ||
+									(underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && // same condition
+									thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && // same condition
+									(thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || // same condition
+								(thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
+									
+								totalSpots--;
+								requestsToCancel.push(thisReq.SpotInstanceRequestId);
+								if(autopilot === "canceling" && thisReq.State === "active"){
+									//console.log(thisReq.InstanceId);
+									instToTerm.push(thisReq.InstanceId);
+								}
+								/*if(parseFloat(thisReq.SpotPrice) > cartelPrice && thisReq.InstanceId != undefined){
+									instToTerm.push(thisReq.InstanceId);
+								}*/
+							}
+						//}
+					//}	
+				}
+				// super dirty brute force mass cancel all instances on all regions
+				// we're gonna get a lot of 400 (Bad Request) errors, but thats ok
+				if(requestsToCancel.length > 0){
+					for(var b = 0; b < ecs.length; b++){
+						ecs[b].cancelSpotInstanceRequests({SpotInstanceRequestIds: requestsToCancel}, function(err, data){
+							//console.log(err);
+							//console.log(data);
+						});
+					}
+				}
+				if(instToTerm.length > 0){
+					for(var c = 0; c < ecs.length; c++){
+						ecs[c].terminateInstances({InstanceIds: instToTerm}, function(err, data){
+							//console.log(err);
+							//console.log(data);
+						});
+					}
+				}
 			}
 			
 			requests--;
-			for(var a = 0; a < data.SpotInstanceRequests.length; a++){
-				var thisReq = data.SpotInstanceRequests[a];
-				if(thisReq.LaunchSpecification.InstanceType === "g2.2xlarge"){
-					if((thisReq.State === "open" || thisReq.State === "active") /*&& (thisReq.LaunchSpecification.Placement.AvailabilityZone === )*/){
-						totalSpots++;
-						var inUnderList = false;
-						//if(thisReq.State === "active")
-							//totalInst++;
-						for(var ind = 0; ind < underPrice.length; ind++){
-							if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
-								inUnderList = true;
-						}
-						if(autopilot === "canceling" || parseFloat(thisReq.SpotPrice) != cartelPrice || (underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && (thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || (thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
-							totalSpots--;
-							requestsToCancel.push(thisReq.SpotInstanceRequestId);
-							if(autopilot === "canceling" && thisReq.State === "active"){
-								//console.log(thisReq.InstanceId);
-								instToTerm.push(thisReq.InstanceId);
-							}
-							/*if(parseFloat(thisReq.SpotPrice) > cartelPrice && thisReq.InstanceId != undefined){
-								instToTerm.push(thisReq.InstanceId);
-							}*/
-						}
-					}
-				}	
-			}
-			// super dirty brute force mass cancel all instances on all regions
-			// we're gonna get a lot of 400 (Bad Request) errors, but thats ok
-			if(requestsToCancel.length > 0){
-				for(var b = 0; b < ecs.length; b++){
-					ecs[b].cancelSpotInstanceRequests({SpotInstanceRequestIds: requestsToCancel}, function(err, data){
-						//console.log(err);
-						//console.log(data);
-					});
-				}
-			}
-			if(instToTerm.length > 0){
-				for(var c = 0; c < ecs.length; c++){
-					ecs[c].terminateInstances({InstanceIds: instToTerm}, function(err, data){
-						//console.log(err);
-						//console.log(data);
-					});
-				}
-			}
+			
 			if(requests == 0){
-				console.log("cancel requests: ", requestsToCancel);
-				console.log("cancel instances: ",instToTerm);
+				console.log("cancelling requests: ", requestsToCancel);
+				console.log("cancelling instances: ", instToTerm);
 				dfd.resolve();
 			}
 		});
@@ -582,7 +587,7 @@ function autoPilot(){
 				}
 			};
 			
-			makeSpot(spotParams, 0);
+			makeSpot(spotParams, 10 - totalSpots);
 		}
 
 		accountIndex++;
@@ -607,14 +612,14 @@ function autoPilot(){
 	return dfd;
 }
 
-function makeSpot(spotParams, zoneIndex){
+function makeSpot(spotParams, numSpots){
 	//var zoneIndex = 0;
-	var reg = 0;
-	console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
+	//var reg = 0;
+	//console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
 	ec2.requestSpotInstances(spotParams, function(err, data){
-		if(err){
+		if(err && numSpots > 1){
 			console.log(err);
-			zoneIndex++;
+			/*zoneIndex++;
 			if(zoneIndex < underPrice.length){
 				for(var i = 0; i < regions.length; i++){
 					if(spotParams.LaunchSpecification.Placement.AvailabilityZone.indexOf(regions[i]) != -1)
@@ -624,15 +629,20 @@ function makeSpot(spotParams, zoneIndex){
 				spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[zoneIndex].zone;
 				spotParams.LaunchSpecification.ImageId = (underPrice[zoneIndex].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg];
 				makeSpot(spotParams, zoneIndex);
-			}
+			}*/
+			spotParams.InstanceCount = numSpots - 1;
+			makeSpot(spotParams, numSpots - 1);
 			//return err;
 			//if(){
 			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
 			//}
 		}
-		else{
-			console.log("made requests: ", data);
+		else if(numSpots > 1){
+			console.log("made " + numSpots + " requests: ", data);
 			//return null;
+		}
+		else{
+			console.lpg("Failed to make instances");
 		}
 		
 		//console.log("account " + accountIndex + ", 10");

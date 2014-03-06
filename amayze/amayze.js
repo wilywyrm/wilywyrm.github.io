@@ -155,6 +155,18 @@ function refreshPrices(){
 	var ecs = [];
 	var numRequests = 0; 
 	var dfd = $.Deferred();
+	var priceText = "";
+
+	$.getJSON("http://pubapi.cryptsy.com/api.php?method=marketdatav2", function(data){
+		//console.log(data/*.return.markets."DOGE/BTC"*/);
+		$('#dogePrice').html("Current price of Doge is " + data['return']['markets']['DOGE\/BTC'].lasttradeprice * 100000000 + " satoshi (Cryptsy) <br /><br />");
+		//console.log(data['return']['markets']['DOGE\/BTC'].lasttradeprice * 100000000);
+		/*$.each(data, function(key, val){
+			if(key === "return"){
+				console.log(val);
+			}
+		});*/
+	});
 
 	updatePrice();
 
@@ -195,8 +207,8 @@ function refreshPrices(){
 					if(numRequests == 0){ // all sync
 						var lowestLin;
 						var lowestWin;
-						var sortedZones = [];
-						var priceText = "";
+						var sortedZones = [];	
+						
 						for(var a = 0; a < regions.length; a++){
 							var regionStr = regions[a];
 							var regionZones = [];

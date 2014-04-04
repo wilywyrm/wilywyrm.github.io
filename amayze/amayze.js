@@ -155,6 +155,18 @@ function refreshPrices(){
 	var ecs = [];
 	var numRequests = 0; 
 	var dfd = $.Deferred();
+	var priceText = "";
+
+	$.getJSON("http://pubapi.cryptsy.com/api.php?method=marketdatav2", function(data){
+		//console.log(data/*.return.markets."DOGE/BTC"*/);
+		$('#dogePrice').html("Doge = " + Math.round(data['return']['markets']['DOGE\/BTC'].lasttradeprice * 100000000) + " satoshi (Cryptsy) <br /><br />");
+		//console.log(Math.round(data['return']['markets']['DOGE\/BTC'].lasttradeprice * 100000000));
+		/*$.each(data, function(key, val){
+			if(key === "return"){
+				console.log(val);
+			}
+		});*/
+	});
 
 	updatePrice();
 
@@ -162,101 +174,103 @@ function refreshPrices(){
 		ecs.push(new AWS.EC2({region: regions[regionIndex]}));
 		
 		ecs[regionIndex].describeAvailabilityZones(function(err, data){
+			if(data != null){
 			//console.log(err);
 			//console.log(data);
-			for(var i = 0; i < data.AvailabilityZones.length*2; i++){ // length * 2 to check for linux and windows
-				numRequests++;
-				var priceParams = {
-					InstanceTypes: ["g2.2xlarge"],
-					MaxResults: 1,
-					AvailabilityZone: data.AvailabilityZones[Math.floor(i/2)].ZoneName,
-					ProductDescriptions: (i % 2 == 0) ? ["Linux/UNIX"] : ["Windows"]
-					//Filters: [{Name: 'availability-zone', Values: [thisZone.ZoneName]}]
-				};
-				//console.log(i);
-
-				var index = $.inArray(data.AvailabilityZones[0].RegionName, regions);
-				ecs[index].describeSpotPriceHistory(priceParams, function(err, spots){
-					if(!err){
-						//console.log(spots);
-						var zoneName = spots.SpotPriceHistory[0].AvailabilityZone;
-						var price = parseFloat(spots.SpotPriceHistory[0].SpotPrice); // price is given as a string, turn it into a number
-						//console.log(price);
-						var OS = spots.SpotPriceHistory[0].ProductDescription;
-						//priceText += "Zone: " + zoneName + ", " + price + " (" + OS + ")\n";
-						aZones.push({
-							zone: zoneName,
-							price: price,
-							os: OS
-						});
-					}
-				}).on('complete', function(){
-					numRequests--;
-					if(numRequests == 0){ // all sync
-						var lowestLin;
-						var lowestWin;
-						var sortedZones = [];
-						var priceText = "";
-						for(var a = 0; a < regions.length; a++){
-							var regionStr = regions[a];
-							var regionZones = [];
-							for(var b = 0; b < aZones.length; b++){
-								if(aZones[b].zone.indexOf(regionStr) != -1){
-									//console.log("hi");
-									var index = 0;
-									// = regionZones.length;
-									while(index < regionZones.length && regionZones[index].price < aZones[b].price){
-										index++;
-									}
-									regionZones.splice(index, 0, aZones[b]);
-									// placement of this isn't crucial, would evaluate outside of if, 
-									// 	but this causes less comparisons
-									/*
-									if(aZones[b].os === ("Linux/UNIX") && (lowestLin == null || aZones[b].price < lowestLin.price)){
-										lowestLin = aZones[b];
+				for(var i = 0; i < data.AvailabilityZones.length*2; i++){ // length * 2 to check for linux and windows
+					numRequests++;
+					var priceParams = {
+						InstanceTypes: ["g2.2xlarge"],
+						MaxResults: 1,
+						AvailabilityZone: data.AvailabilityZones[Math.floor(i/2)].ZoneName,
+						ProductDescriptions: (i % 2 == 0) ? ["Linux/UNIX"] : ["Windows"]
+						//Filters: [{Name: 'availability-zone', Values: [thisZone.ZoneName]}]
+					};
+					//console.log(i);
+	
+					var index = $.inArray(data.AvailabilityZones[0].RegionName, regions);
+					ecs[index].describeSpotPriceHistory(priceParams, function(err, spots){
+						if(!err){
+							//console.log(spots);
+							var zoneName = spots.SpotPriceHistory[0].AvailabilityZone;
+							var price = parseFloat(spots.SpotPriceHistory[0].SpotPrice); // price is given as a string, turn it into a number
+							//console.log(price);
+							var OS = spots.SpotPriceHistory[0].ProductDescription;
+							//priceText += "Zone: " + zoneName + ", " + price + " (" + OS + ")\n";
+							aZones.push({
+								zone: zoneName,
+								price: price,
+								os: OS
+							});
+						}
+					}).on('complete', function(){
+						numRequests--;
+						if(numRequests == 0){ // all sync
+							var lowestLin;
+							var lowestWin;
+							var sortedZones = [];	
+							
+							for(var a = 0; a < regions.length; a++){
+								var regionStr = regions[a];
+								var regionZones = [];
+								for(var b = 0; b < aZones.length; b++){
+									if(aZones[b].zone.indexOf(regionStr) != -1){
 										//console.log("hi");
-									} 
-									else if(aZones[b].os === ("Windows") && (lowestWin == null || aZones[b].price < lowestWin.price)){
-										lowestWin = aZones[b];
-									
+										var index = 0;
+										// = regionZones.length;
+										while(index < regionZones.length && regionZones[index].price < aZones[b].price){
+											index++;
+										}
+										regionZones.splice(index, 0, aZones[b]);
+										// placement of this isn't crucial, would evaluate outside of if, 
+										// 	but this causes less comparisons
+										/*
+										if(aZones[b].os === ("Linux/UNIX") && (lowestLin == null || aZones[b].price < lowestLin.price)){
+											lowestLin = aZones[b];
+											//console.log("hi");
+										} 
+										else if(aZones[b].os === ("Windows") && (lowestWin == null || aZones[b].price < lowestWin.price)){
+											lowestWin = aZones[b];
+										
+										}
+										*/
 									}
-									*/
+								}
+								sortedZones.push(regionZones);
+							}
+							underPrice = [];
+							for(var c = 0; c < aZones.length; c++){
+								if(aZones[c].price <= cartelPrice){
+									var d = 0;
+									while(d < underPrice.length && underPrice[d].price < aZones[c].price){
+											d++;
+									}
+									underPrice.splice(d, 0, aZones[c]);
 								}
 							}
-							sortedZones.push(regionZones);
-						}
-						underPrice = [];
-						for(var c = 0; c < aZones.length; c++){
-							if(aZones[c].price <= cartelPrice){
-								var d = 0;
-								while(d < underPrice.length && underPrice[d].price < aZones[c].price){
-										d++;
+							console.log(sortedZones);
+							console.log(underPrice);
+							//console.log(lowestLin);
+							//console.log(lowestWin);
+							priceText += "Prices at or below the threshold are: <br /> ";
+							// + lowestLin.price + " for " + lowestLin.os + " in " + lowestLin.zone + "<br />";
+							for(var c = 0; c < underPrice.length; c++){
+								priceText += underPrice[c].price + " for " + underPrice[c].os + " in " + underPrice[c].zone + "<br />";
+							}
+							
+							//priceText += lowestWin.price + " for " + lowestWin.os + " in " + lowestWin.zone + "<br />";
+							
+							for(var c = 0; c < sortedZones.length; c++){
+								priceText += "<br />Region: " + regions[c] + "<br />";
+								for(var d = 0; d < sortedZones[c].length; d++){
+									priceText += "	Zone: " + sortedZones[c][d].zone + ", $" + sortedZones[c][d].price + " (" + sortedZones[c][d].os + ")<br />";
 								}
-								underPrice.splice(d, 0, aZones[c]);
 							}
+							 $('#prices').html(priceText);
+							 dfd.resolve();
 						}
-						console.log(sortedZones);
-						console.log(underPrice);
-						//console.log(lowestLin);
-						//console.log(lowestWin);
-						priceText += "Prices at or below the threshold are: <br /> ";
-						// + lowestLin.price + " for " + lowestLin.os + " in " + lowestLin.zone + "<br />";
-						for(var c = 0; c < underPrice.length; c++){
-							priceText += underPrice[c].price + " for " + underPrice[c].os + " in " + underPrice[c].zone + "<br />";
-						}
-						
-						//priceText += lowestWin.price + " for " + lowestWin.os + " in " + lowestWin.zone + "<br />";
-						
-						for(var c = 0; c < sortedZones.length; c++){
-							priceText += "<br />Region: " + regions[c] + "<br />";
-							for(var d = 0; d < sortedZones[c].length; d++){
-								priceText += "	Zone: " + sortedZones[c][d].zone + ", $" + sortedZones[c][d].price + " (" + sortedZones[c][d].os + ")<br />";
-							}
-						}
-						 $('#prices').html(priceText);
-						 dfd.resolve();
-					}
-				});
+					});
+				}
 			}
 		});
 	}
@@ -419,38 +433,40 @@ function autoPilot(){
 		ecs[i].describeInstances(filterParams, function(err,data){
 			//console.log(data);
 			//console.log(err);
-			if(data.Reservations.length > 0){
-				console.log(data.Reservations[0].Instances[0].Placement.AvailabilityZone, data);	
+			if(data != null){ // handle 503/5xx errors which happen when a region goes down
+				if(data.Reservations.length > 0){
+					console.log(data.Reservations[0].Instances[0].Placement.AvailabilityZone, data);	
+				}
+				
+				for(var i = 0; i < data.Reservations.length; i++){
+					//if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
+					allInst.push(data.Reservations[i].Instances[0].InstanceId);
+					totalInst++;
+					if(autopilot === "canceling")
+						instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
+					//}
+				}
+				var params = {
+					Namespace: "AWS/EC2",
+					MetricName: "CPUUtilization",
+					Dimensions: [
+						{
+							"Name": "InstanceId",
+							"Value": ""
+						}
+					],
+					Period: 300, // 5 minutes
+					Statistics: ["Average"],
+					Unit: "Percent"
+				};
+				/*clouds[i].getMetricStatistics(params, function(err, data){
+					console.log(err);
+					console.log(data);
+					// how do we prevent the restart-loop, where we detect <50% CPU usage and restart,
+					// then next time we check (worst case 1 minute), we restart again because the restart just took place
+					// since it takes 15 minutes for windows instances to reach full CPU usage?
+				});*/
 			}
-			
-			for(var i = 0; i < data.Reservations.length; i++){
-				//if(data.Reservations[i].Instances[0].InstanceType === "g2.2xlarge" && data.Reservations[i].Instances[0].State.Name === "running"){
-				allInst.push(data.Reservations[i].Instances[0].InstanceId);
-				totalInst++;
-				if(autopilot === "canceling")
-					instToTerm.push(data.Reservations[i].Instances[0].InstanceId);
-				//}
-			}
-			var params = {
-				Namespace: "AWS/EC2",
-				MetricName: "CPUUtilization",
-				Dimensions: [
-					{
-						"Name": "InstanceId",
-						"Value": ""
-					}
-				],
-				Period: 300, // 5 minutes
-				Statistics: ["Average"],
-				Unit: "Percent"
-			};
-			/*clouds[i].getMetricStatistics(params, function(err, data){
-				console.log(err);
-				console.log(data);
-				// how do we prevent the restart-loop, where we detect <50% CPU usage and restart,
-				// then next time we check (worst case 1 minute), we restart again because the restart just took place
-				// since it takes 15 minutes for windows instances to reach full CPU usage?
-			});*/
 		});
 		
 		filterParams = {
@@ -467,72 +483,84 @@ function autoPilot(){
 		};
 		
 		ecs[i].describeSpotInstanceRequests(filterParams, function(err, data){
-			if(data.SpotInstanceRequests.length > 0){
-				console.log(data.SpotInstanceRequests[0].LaunchSpecification.Placement.AvailabilityZone, data);
-				for(var a = 0; a < data.SpotInstanceRequests.length; a++){
-					var thisReq = data.SpotInstanceRequests[a];
-					//if(thisReq.LaunchSpecification.InstanceType === "g2.2xlarge"){
-						//if((thisReq.State === "open" || thisReq.State === "active") /*&& (thisReq.LaunchSpecification.Placement.AvailabilityZone === )*/){
-							totalSpots++;
-							var inUnderList = false;
-							//if(thisReq.State === "active")
-								//totalInst++;
-							for(var ind = 0; ind < underPrice.length; ind++){
-								if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
-									inUnderList = true;
-							}
-							if(autopilot === "canceling" || parseFloat(thisReq.SpotPrice) != cartelPrice ||
-									(underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && // same condition
-									thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && // same condition
-									(thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || // same condition
-								(thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
-									
-								totalSpots--;
-								requestsToCancel.push(thisReq.SpotInstanceRequestId);
-								if(autopilot === "canceling" && thisReq.State === "active"){
-									//console.log(thisReq.InstanceId);
-									instToTerm.push(thisReq.InstanceId);
+			if(data != null){ // handle 503/5xx errors which happen when a region goes down
+				if(data.SpotInstanceRequests.length > 0){
+					console.log(data.SpotInstanceRequests[0].LaunchSpecification.Placement.AvailabilityZone, data);
+					for(var a = 0; a < data.SpotInstanceRequests.length; a++){
+						var thisReq = data.SpotInstanceRequests[a];
+						//if(thisReq.LaunchSpecification.InstanceType === "g2.2xlarge"){
+							//if((thisReq.State === "open" || thisReq.State === "active") /*&& (thisReq.LaunchSpecification.Placement.AvailabilityZone === )*/){
+								totalSpots++;
+								var inUnderList = false;
+								//if(thisReq.State === "active")
+									//totalInst++;
+								for(var ind = 0; ind < underPrice.length; ind++){
+									if(thisReq.LaunchSpecification.Placement.AvailabilityZone === underPrice[ind].zone)
+										inUnderList = true;
 								}
-								/*if(parseFloat(thisReq.SpotPrice) > cartelPrice && thisReq.InstanceId != undefined){
-									instToTerm.push(thisReq.InstanceId);
-								}*/
-							}
-						//}
-					//}	
-				}
-				// super dirty brute force mass cancel all instances on all regions
-				// we're gonna get a lot of 400 (Bad Request) errors, but thats ok
-				if(requestsToCancel.length > 0){
-					for(var b = 0; b < ecs.length; b++){
-						ecs[b].cancelSpotInstanceRequests({SpotInstanceRequestIds: requestsToCancel}, function(err, data){
-							//console.log(err);
-							//console.log(data);
-						});
+								if(autopilot === "canceling" || parseFloat(thisReq.SpotPrice) != cartelPrice ||
+										(underPrice.length > 0 && parseFloat(thisReq.SpotPrice) > underPrice[0].price && // same condition
+										thisReq.LaunchSpecification.Placement.AvailabilityZones != underPrice[0].zone && // same condition
+										(thisReq.Status.Code.indexOf("oversubscribed") != -1 || thisReq.Status.Code.indexOf("price-too-low") != -1)) || // same condition
+									(thisReq.SpotPrice > cartelPrice && !inUnderList && underPrice.length > 0)){
+										
+									totalSpots--;
+									requestsToCancel.push(thisReq.SpotInstanceRequestId);
+									if(autopilot === "canceling" && thisReq.State === "active"){
+										//console.log(thisReq.InstanceId);
+										instToTerm.push(thisReq.InstanceId);
+									}
+									/*if(parseFloat(thisReq.SpotPrice) > cartelPrice && thisReq.InstanceId != undefined){
+										instToTerm.push(thisReq.InstanceId);
+									}*/
+								}
+							//}
+						//}	
+					}
+					// super dirty brute force mass cancel all instances on all regions
+					// we're gonna get a lot of 400 (Bad Request) errors, but thats ok
+					if(requestsToCancel.length > 0){
+						for(var b = 0; b < ecs.length; b++){
+							ecs[b].cancelSpotInstanceRequests({SpotInstanceRequestIds: requestsToCancel}, function(err, data){
+								//console.log(err);
+								//console.log(data);
+							});
+						}
+					}
+					if(instToTerm.length > 0){
+						for(var c = 0; c < ecs.length; c++){
+							ecs[c].terminateInstances({InstanceIds: instToTerm}, function(err, data){
+								//console.log(err);
+								//console.log(data);
+							});
+						}
 					}
 				}
-				if(instToTerm.length > 0){
-					for(var c = 0; c < ecs.length; c++){
-						ecs[c].terminateInstances({InstanceIds: instToTerm}, function(err, data){
-							//console.log(err);
-							//console.log(data);
-						});
-					}
+				
+				requests--;
+				
+				if(requests == 0){
+					console.log("cancelling requests: ", requestsToCancel);
+					console.log("cancelling instances: ", instToTerm);
+					dfd.resolve();
 				}
 			}
-			
-			requests--;
-			
-			if(requests == 0){
-				console.log("cancelling requests: ", requestsToCancel);
-				console.log("cancelling instances: ", instToTerm);
-				dfd.resolve();
+			else{
+				requests--;
+				
+				if(requests == 0){
+					console.log("cancelling requests: ", requestsToCancel);
+					console.log("cancelling instances: ", instToTerm);
+					dfd.resolve();
+				}
 			}
 		});
 	}
 	
 	dfd.done(function(){
+		var maxRequests = 10; // goes from 0 to 10, used to scale back requests
 		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
-		if(totalSpots < 10 && underPrice.length > 0 && autopilot === "enabled"){
+		if(totalSpots < maxRequests && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
 			
 			var reg = 0;
@@ -568,7 +596,7 @@ function autoPilot(){
 			// spot instance request parameters
 			var spotParams = {
 				SpotPrice: ("" + cartelPrice), // "" to make cartelPrice into a string
-				InstanceCount: 10 - totalSpots,
+				//InstanceCount: 3 - totalSpots,
 				Type: "one-time",
 				LaunchSpecification : {
 					ImageId: (underPrice[aZone].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg], 
@@ -580,7 +608,7 @@ function autoPilot(){
 				}
 			};
 			
-			makeSpot(spotParams, 10 - totalSpots);
+			makeSpot(spotParams, maxRequests - totalSpots); // reduced to 10 from 3 to help avoid triggering audits
 		}
 
 		accountIndex++;
@@ -609,6 +637,7 @@ function makeSpot(spotParams, numSpots){
 	//var zoneIndex = 0;
 	//var reg = 0;
 	//console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
+	spotParams.InstanceCount = numSpots;
 	ec2.requestSpotInstances(spotParams, function(err, data){
 		if(err && numSpots > 1){
 			console.log(err);
@@ -623,21 +652,18 @@ function makeSpot(spotParams, numSpots){
 				spotParams.LaunchSpecification.ImageId = (underPrice[zoneIndex].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg];
 				makeSpot(spotParams, zoneIndex);
 			}*/
-			spotParams.InstanceCount = numSpots - 1;
+			//spotParams.InstanceCount = numSpots - 1;
 			makeSpot(spotParams, numSpots - 1);
 			//return err;
 			//if(){
 			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
 			//}
 		}
-		else if(numSpots > 1){
+		else if(numSpots > 0){
 			console.log("made " + numSpots + " requests: ", data);
-			//return null;
 		}
-		else{
+		else if(err){
 			console.log("Failed to make instances");
 		}
-		
-		//console.log("account " + accountIndex + ", 10");
 	});
 }

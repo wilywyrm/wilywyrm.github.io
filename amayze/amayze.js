@@ -608,7 +608,7 @@ function autoPilot(){
 				}
 			};
 			
-			makeSpot(spotParams, maxRequests - totalSpots); // reduced to 10 from 3 to help avoid triggering audits
+			makeSpot(spotParams, maxRequests - totalSpots);
 		}
 
 		accountIndex++;
@@ -659,7 +659,7 @@ function makeSpot(spotParams, numSpots){
 			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
 			//}
 		}
-		else if(numSpots > 0){
+		else if(numSpots > 1){
 			console.log("made " + numSpots + " requests: ", data);
 		}
 		else if(err){

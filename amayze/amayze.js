@@ -1,68 +1,85 @@
-var accounts = [];
-var numAccounts = 0;
-var regions = ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"];
-// in format: east1, west2, west1, euwest1 
-var linAMIs = [];
-var winAMIs = [];
+/*** 
+ Amayze.js
+ This is a script designed to automatically manage multiple Amazon Web Services (AWS) accounts and use them to launch Elastic
+ Compute Cloud (EC2) instances at the lowest possible price across multiple AWS regions. Optional Autopilot mode cycles through
+ each account and load balances instance requests across regions to run the most instances at the lowest possible price at or 
+ under the user-set price.
+ 
+ This script is meant to be used in conjunction with a HTML page front-end for users to input account credentials, instance configurations 
+ (Amazon Machine Images, User Data, etc.), and instance price. These are all stored client-side using cookies
+ 
+ NOT MEANT to be used in a production environment. Personal project.
+ Requires: jQuery, jQuery cookie plugin, full AWS Javascript SDK
+ ***/
+
+var accounts = []; // holder of user account objects (contains account ID and secret keys)
+var numAccounts = 0; 
+var regions = ["us-east-1", "us-west-2", "us-west-1", "eu-west-1"]; // name of AWS regions, hard coded for now
+var linAMIs = []; // IDs of linux Amazon Machine Images
+var winAMIs = []; // IDs of windows AMIs
 
 
-// startup script for windows configuration
-var userData;
-var cartelPrice = .1;
-var underPrice = [];
-var autopilot = "disabled";
-var accountIndex = 0;
+var userData; // user data to configure Windows AMIs
+var cartelPrice = .1; // the default user-set max instance price
+var underPrice = []; // the availability zone/region pairs that fall under the set price
+var autopilot = "disabled"; // the status of the autopilot ("disabled", "enabled", or "canceling")
+var accountIndex = 0; // the index of the account we are on
 
+
+// init() reads all data from cookies we store client-side
 function init(){
-	// init saved values from cookies
+	// read and set user-set price
 	if($.cookie("cartelPrice") !== undefined){
 		cartelPrice = $.cookie("cartelPrice");
 	}
 	document.getElementById("cartelPrice").value = cartelPrice;
 		
+	// read and set autopilot state
 	if($.cookie("autopilot") !== undefined){
 		autopilot = $.cookie("autopilot");
 	}
 	$('#autoIndicator').text("Autopilot is " + autopilot);	
 	
+	// read and set number of accounts
 	if($.cookie("numAccounts") !== undefined){
 		numAccounts = $.cookie("numAccounts");
 	}
 	$.cookie("numAccounts", numAccounts, {expires: 9999});
 	
+	// html holder for the user credential forms
 	var idHTML = "Account IDs: <br />";
 	var secretHTML = "Secret Keys: <br />";
-	//var enableHTML = "Enabled: <br />";
+	// if there are valid credentials stored in cookies, read them into our array and display them on the HTML form
 	if($.cookie("accessID0") !== undefined && $.cookie("secret0") !== undefined){
 		var num = 0;
 		var idStr = "accessID" + num;
 		var secretStr = "secret" + num;
-		//var enableStr = "enable" + num;
+		
 		do{
 			accounts[num] = {accessID: $.cookie(idStr), secret: $.cookie(secretStr)/*, enabled: $.cookie(enableStr)*/};
 			idHTML += "<br />"+ num + " <input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" value=\"" + $.cookie(idStr) + "\" onblur=\"updateAccts()\">";
 			secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"" + secretStr + "\" name=\"" + secretStr + "\" value=\"" + $.cookie(secretStr) + "\" onblur=\"updateAccts()\">";
-			//enableHTML += "<br /><input type=\"checkbox\" id=\"" + enableStr + "\" name=\"" + enableStr + "\" checked=\"" + $.cookie(enableStr) + "\" onclick=\"updateAccts()\">";
 			num++;
 			idStr = "accessID" + num;
 			secretStr = "secret" + num;
-			//enableStr = "enable" + num;
-		} while($.cookie(idStr) !== undefined && $.cookie(secretStr) !== undefined/* && $.cookie(enableStr) !== undefined*/);
+			
+		} while($.cookie(idStr) !== undefined && $.cookie(secretStr) !== undefined);
 		numAccounts = num;
 		$.cookie("numAccounts", numAccounts, {expires: 9999});
 	}		
 	else{
-		//console.log("hi");
+		// make an empty form, this is probably first run
 		idHTML += "<br />0 <input type=\"text\" size=\"30\" id=\"accessID0\" name=\"accessID0\" onblur=\"updateAccts()\">";
 		secretHTML += "<br /><input type=\"text\" size=\"50\" id=\"secret0\" name=\"secret0\" onblur=\"updateAccts()\">";
-		//enableHTML += "<br /><input type=\"checkbox\" id=\"enable0\" name=\"enable0\" checked=\"true\" onclick=\"updateAccts()\">";
 	}
 	//console.log(accounts);
 	
-	if($.cookie("userData") !== undefined){
+	// read and set user data for AMI configuration
+	/*if($.cookie("userData") !== undefined){
 		userData = $.cookie(userData);
-	}
+	}*/
 	
+	// read and set AMI IDs for Linux and Windows
 	var amiHTML = "AMIs (Linux, Windows):<br />";
 	for(var i = 0; i < regions.length; i++){
 		var linStr = regions[i] + "lin";
@@ -84,11 +101,13 @@ function init(){
 		//$.cookie("numAccounts", numAccounts);
 	}
 	
+	// read and set user data for AMI configuration
 	if($.cookie("userData") !== undefined){
 		userData = $.cookie("userData");
 		document.getElementById("userData").value = $.cookie("userData");
 	}
 	
+	// write all HTML holders to their respective divs on the HTML document 
 	$('#ids').html(idHTML);
 	$('#secrets').html(secretHTML);
 	$('#amis').html(amiHTML);
@@ -97,6 +116,7 @@ function init(){
 	//console.log(idHTML);
 	//document.getElementById("setIndex").value = accountIndex;
 	
+	// read and set index of account we are working with
 	if($.cookie("accountIndex") !== undefined){
 		accountIndex = $.cookie("accountIndex");
 		if(accountIndex > accounts.length){
@@ -106,7 +126,7 @@ function init(){
 	}		
 	//document.getElementById("setIndex").value = accountIndex;
 	
-	//console.log(accounts[0]);
+	// handle infinite loop case of user filling in credentials and then erasing
 	var stop = false;
 	//console.log(!stop);
 	//console.log(!(document.getElementById("accessID" + accountIndex).value === "" || document.getElementById("secret" + accountIndex).value === ""));
@@ -117,7 +137,7 @@ function init(){
 			accountIndex = 0;
 			stop = true; // yeah this doesn't really function as it should, it doesn't cycle through all accounts before stopping, just need to stop the infinite loop
 			//console.log("hi");
-			if(autopilot === "canceling"){
+			if(autopilot === "canceling"){ // if we were canceling instances, stop the process once we loop back to account 0
 				autopilot = "disabled";
 				$('#autoIndicator').text("Autopilot is " + autopilot);	
 			}
@@ -126,13 +146,15 @@ function init(){
 	console.log(accounts[accountIndex]);
 	document.getElementById("setIndex").value = accountIndex;
 	
+	// set variables in cookies
 	$.cookie("cartelPrice", cartelPrice, {expires: 9999});
 	$.cookie("autopilot", autopilot, {expires: 9999});
 	$.cookie("accountIndex", accountIndex, {expires: 9999});
 	
+	// configure the AWS SDK to use the credentials we loaded
 	AWS.config.update({accessKeyId: accounts[accountIndex].accessID, secretAccessKey: accounts[accountIndex].secret, region: regions[0]});
-	//AWS.config.region = regions[0];
 	
+	// display prices for instances in each availablity zone in each region
 	var deferred = refreshPrices();
 	deferred.done(function(){
 		if(!(autopilot === "disabled")){
@@ -148,15 +170,16 @@ function init(){
 	});
 }
 
+// get prices for g2.2xlarge instances in each zone/region, sort them by descending price, and 
 function refreshPrices(){	
 	var regionIndex = 0;
-	//var priceText = "";
-	var aZones = [];
-	var ecs = [];
-	var numRequests = 0; 
-	var dfd = $.Deferred();
-	var priceText = "";
+	var aZones = []; // availability zones
+	var ecs = [];	// separate AWS EC2 objects to query each AWS region
+	var numRequests = 0; // number of requests we make
+	var dfd = $.Deferred(); // deferred object to return and be handled
+	var priceText = "";	// "Lowest price is: "
 
+	// get the latest price of Dogecoin relative to Bitcoin (this script was originally written to mine dogecoin on EC2)
 	$.getJSON("http://pubapi.cryptsy.com/api.php?method=marketdatav2", function(data){
 		//console.log(data/*.return.markets."DOGE/BTC"*/);
 		$('#dogePrice').html("Doge = " + Math.round(data['return']['markets']['DOGE\/BTC'].lasttradeprice * 100000000) + " satoshi (Cryptsy) <br /><br />");
@@ -167,9 +190,11 @@ function refreshPrices(){
 			}
 		});*/
 	});
-
+	
+	// update the prices displayed
 	updatePrice();
 
+	// sort prices by zone and place zones cheaper than the user-set price into a separate array
 	for(regionIndex = 0; regionIndex < regions.length; regionIndex++){
 		ecs.push(new AWS.EC2({region: regions[regionIndex]}));
 		
@@ -178,7 +203,7 @@ function refreshPrices(){
 			//console.log(err);
 			//console.log(data);
 				for(var i = 0; i < data.AvailabilityZones.length*2; i++){ // length * 2 to check for linux and windows
-					numRequests++;
+					numRequests++;	// increment number of requests outstanding
 					var priceParams = {
 						InstanceTypes: ["g2.2xlarge"],
 						MaxResults: 1,
@@ -186,8 +211,7 @@ function refreshPrices(){
 						ProductDescriptions: (i % 2 == 0) ? ["Linux/UNIX"] : ["Windows"]
 						//Filters: [{Name: 'availability-zone', Values: [thisZone.ZoneName]}]
 					};
-					//console.log(i);
-	
+
 					var index = $.inArray(data.AvailabilityZones[0].RegionName, regions);
 					ecs[index].describeSpotPriceHistory(priceParams, function(err, spots){
 						if(!err){
@@ -204,8 +228,8 @@ function refreshPrices(){
 							});
 						}
 					}).on('complete', function(){
-						numRequests--;
-						if(numRequests == 0){ // all sync
+						numRequests--;	// the request finished, so we decrease the count of outstanding requests
+						if(numRequests == 0){ // if all requests have finished, sort the zones
 							var lowestLin;
 							var lowestWin;
 							var sortedZones = [];	
@@ -279,11 +303,13 @@ function refreshPrices(){
 	
 }
 
+// update the user-set price and set it in a cookie
 function updatePrice(){
 	cartelPrice = document.getElementById("cartelPrice").value;
 	$.cookie("cartelPrice", cartelPrice, {expires: 9999});
 }
 
+// add rows to add more user credentials on a click of the "add rows button"
 function addRows(){
 	var idStr = "accessID" + numAccounts;
 	var secretStr = "secret" + numAccounts;
@@ -291,7 +317,7 @@ function addRows(){
 	// numAccounts doubles as current index
 	var idHTML = "<br />"+ numAccounts + " <input type=\"text\" size=\"30\" id=\"" + idStr + "\" name=\"" + idStr + "\" onblur=\"updateAccts()\">";
 	var secretHTML = "<br /><input type=\"text\" size=\"50\" id=\"" + secretStr + "\" name=\"" + secretStr + "\" onblur=\"updateAccts()\">";
-	//var enableHTML = "<br /><input type=\"checkbox\" id=\"" + enableStr + "\" name=\"" + enableStr + "\" checked=\"true\" onclick=\"updateAccts()\">";
+	
 	$.cookie(idStr, "", {expires: 9999});
 	$.cookie(secretStr, "", {expires: 9999});
 	numAccounts++;
@@ -299,11 +325,9 @@ function addRows(){
 	
 	$('#ids').append(idHTML);
 	$('#secrets').append(secretHTML);
-	//$('#enables').append(enableHTML);
-	//numAccounts++;
-	//$.cookie("numAccounts", numAccounts);
 }
 
+// update account credentials
 function updateAccts(){
 	var num = 0;
 	var idStr = "accessID" + num;
@@ -338,6 +362,7 @@ function updateAccts(){
 	return {id: idHTML, secret: secretHTML/*, enable: enableHTML*/};
 }
 
+// update AMIs on HTML page
 function updateAMIs(){
 	var amiHTML = "AMIs (Linux, Windows):";
 	for(var i = 0; i < regions.length; i++){
@@ -358,17 +383,20 @@ function updateAMIs(){
 	$('#amis').html(amiHTML);
 }
 
+// 
 function updateUserData(){
 	userData = document.getElementById("userData").value;
 	console.log(userData);
 	$.cookie("userData", userData, {expires: 9999});
 }
 
+//
 function setAccIndex(){
 	accountIndex = document.getElementById("setIndex").value;
 	$.cookie("accountIndex", accountIndex, {expires: 9999});
 }
 
+// set autopilot to cancel mode on button press
 function cancelAll(){
 	accountIndex = 0;
 	$.cookie("accountIndex", accountIndex, {expires: 9999});
@@ -377,14 +405,15 @@ function cancelAll(){
 	window.location.reload(true);
 }
 
+// toggle autopilot mode between enabled/disabled
 function toggleAuto(){
-	if(autopilot === "disabled")
+	if(autopilot === "disabled" || autopilot === "canceling")
 		autopilot = "enabled";
 	else if(autopilot === "enabled")
 		autopilot = "disabled";
-	else if(autopilot === "canceling")
+	/*else if(autopilot === "canceling")
 		autopilot = "enabled";
-		
+	*/	
 	$.cookie("autopilot", autopilot, {expires: 9999});
 	$('#autoIndicator').text("Autopilot is " + $.cookie("autopilot"));
 	if(autopilot === "enabled"){
@@ -393,8 +422,12 @@ function toggleAuto(){
 	//console.log("yo");
 }
 
+// autopilot runs in the background, making instance requests and canceling requests that don't get fulfilled
+// we request information about the account's current requests, if any, and only count requests that are either 
+// fulfilled or open to be fulfilled, not canceled. We cancel the requests that are open because of a "capacity-oversubscribed"
+// (not enough room in region) error or "price-too-low", and make more requests in regions with more room or lower prices
 function autoPilot(){
-	// super cool AI shit
+	// super cool AI stuff
 	//if(underPrice.length > 0){
 	var ecs = [];
 	var clouds = [];
@@ -403,7 +436,7 @@ function autoPilot(){
 	var totalSpots = 0;
 	var totalInst = 0;
 	var allInst = [];
-	var requestsToCancel = []; // if the previous spot price > current cartel price
+	var requestsToCancel = []; // if the previous spot price > current user-set price
 	var instToTerm = [];	   // associated instance IDs for requests fulfilled
 	
 	for(var i = 0; i < regions.length; i++){
@@ -414,6 +447,8 @@ function autoPilot(){
 		//	console.log(data);
 		//});
 		//console.log(i);
+		
+		// filter AWS's account information responses to only these kinds of instances to reduce sort time on our end
 		var filterParams = {
 			Filters: [
 				{
@@ -430,6 +465,8 @@ function autoPilot(){
 				}
 			]
 		};
+		
+		// unfinished monitoring of instances to restart them when they go below 100% utilization
 		ecs[i].describeInstances(filterParams, function(err,data){
 			//console.log(data);
 			//console.log(err);
@@ -557,8 +594,9 @@ function autoPilot(){
 		});
 	}
 	
+	// when analysis of accounts and active requests is finished, make requests if the prices are acceptable
 	dfd.done(function(){
-		var maxRequests = 10; // goes from 0 to 10, used to scale back requests
+		var maxRequests = 40; // goes from 0 to 10, used to scale back requests
 		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
 		if(totalSpots < maxRequests && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
@@ -567,6 +605,7 @@ function autoPilot(){
 			var aZone = 0;
 			var a = 0;
 			
+			// check to see if all the regions with acceptable prices have the same price
 			var allSame = true;
 			for(var b = 0; b < underPrice.length; b++){
 				for(var c = b+1; c < underPrice.length; c++){
@@ -576,7 +615,7 @@ function autoPilot(){
 				//console.log("hi");
 			}
 			
-			if(allSame){
+			if(allSame){ // if all acceptable regions have the same price, pick a random zone and make instances in it
 				aZone = Math.floor(Math.random() * underPrice.length);
 				console.log("All same price, we used zone " + underPrice[aZone].zone);
 			}
@@ -608,7 +647,14 @@ function autoPilot(){
 				}
 			};
 			
+			// make spot instance requests
+			// this makeSpot() function call is recursive on request failures
+			// so it starts requesting a total of "maxRequests - totalSpots" requests
+			// and decrements until it succeeds making requests or the counter reaches 0
 			makeSpot(spotParams, maxRequests - totalSpots);
+		}
+		else{
+			console.log("Didn't bother making instances."); // on !(totalSpots < maxRequests && underPrice.length > 0 && autopilot === "enabled")
 		}
 
 		accountIndex++;
@@ -625,7 +671,7 @@ function autoPilot(){
 		if(autopilot === "canceling"){
 			setTimeout(function(){
 				window.location.reload(true);
-			}, 5000); // 5s delay before next account
+			}, 5000); // 5s delay before refresh and move onto next account
 			
 		}
 	});
@@ -633,13 +679,14 @@ function autoPilot(){
 	return dfd;
 }
 
+// recursive spot instance request helper
 function makeSpot(spotParams, numSpots){
 	//var zoneIndex = 0;
 	//var reg = 0;
 	//console.log(spotParams.LaunchSpecification.Placement.AvailabilityZone);
 	spotParams.InstanceCount = numSpots;
 	ec2.requestSpotInstances(spotParams, function(err, data){
-		if(err && numSpots > 1){
+		if(err && numSpots > 1){ // make more requests for less instances on an error
 			console.log(err);
 			/*zoneIndex++;
 			if(zoneIndex < underPrice.length){
@@ -659,10 +706,10 @@ function makeSpot(spotParams, numSpots){
 			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;
 			//}
 		}
-		else if(numSpots > 1){
+		else if(numSpots > 1){ // log to console on successful request
 			console.log("made " + numSpots + " requests: ", data);
 		}
-		else if(err){
+		else if(err){ // log to console thta we couldn't make any instances
 			console.log("Failed to make instances");
 		}
 	});

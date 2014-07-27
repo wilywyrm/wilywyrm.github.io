@@ -596,7 +596,7 @@ function autoPilot(){
 	
 	// when analysis of accounts and active requests is finished, make requests if the prices are acceptable
 	dfd.done(function(){
-		var maxRequests = 20; // goes from 0 to 10, used to scale back requests
+		var maxRequests = 40; // goes from 0 to 10, used to scale back requests
 		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
 		if(totalSpots < maxRequests && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone

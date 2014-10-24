@@ -596,7 +596,7 @@ function autoPilot(){
 	
 	// when analysis of accounts and active requests is finished, make requests if the prices are acceptable
 	dfd.done(function(){
-		var maxRequests = 40; // goes from 0 to 10, used to scale back requests
+		var maxRequests = 40; // goes from 0 to 40, used to scale back requests
 		console.log("account " + accountIndex + " has " + totalSpots + " requests, " + totalInst + " running");
 		if(totalSpots < maxRequests && underPrice.length > 0 && autopilot === "enabled"){
 			//find region of lowest priced zone
@@ -700,7 +700,15 @@ function makeSpot(spotParams, numSpots){
 				makeSpot(spotParams, zoneIndex);
 			}*/
 			//spotParams.InstanceCount = numSpots - 1;
-			makeSpot(spotParams, numSpots - 1);
+			if(numSpots > 20){
+				makeSpot(spotParams, numSpots - 10);
+			}
+			else{
+				setTimeout(function(){
+					makeSpot(spotParams, numSpots - 1);
+				}, 2000);
+			}
+			
 			//return err;
 			//if(){
 			//	spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[1].zone;

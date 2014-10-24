@@ -700,6 +700,8 @@ function makeSpot(spotParams, numSpots){
 				makeSpot(spotParams, zoneIndex);
 			}*/
 			//spotParams.InstanceCount = numSpots - 1;
+			spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[Math.floor(Math.random() * underPrice.length)].zone;
+			console.log("Error, we tried using " + spotParams.LaunchSpecification.Placement.AvailabilityZone + " instead.");
 			if(numSpots > 20){
 				makeSpot(spotParams, numSpots - 10);
 			}

@@ -700,7 +700,36 @@ function makeSpot(spotParams, numSpots){
 				makeSpot(spotParams, zoneIndex);
 			}*/
 			//spotParams.InstanceCount = numSpots - 1;
-			spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[Math.floor(Math.random() * underPrice.length)].zone;
+			var aZone = Math.floor(Math.random() * underPrice.length);
+			var a = 0;
+			var reg = 0;
+			//spotParams.LaunchSpecification.Placement.AvailabilityZone = underPrice[aZone].zone;
+			while(a < regions.length){
+				if(underPrice[aZone].zone.indexOf(regions[a]) != -1){
+					reg = a;
+					//console.log(a);
+				}
+				a++;
+				//console.log(a);
+			}
+			
+			// init ec2 in region
+			ec2 = new AWS.EC2({region: regions[reg]});
+			
+			spotParams = {
+				SpotPrice: ("" + cartelPrice), // "" to make cartelPrice into a string
+				//InstanceCount: 3 - totalSpots,
+				Type: "one-time",
+				LaunchSpecification : {
+					ImageId: (underPrice[aZone].os === "Linux/UNIX") ? linAMIs[reg] : winAMIs[reg], 
+					InstanceType : "g2.2xlarge",
+					UserData: btoa(userData), // ec2 expects userdata encoded with base64
+					Placement: {
+						AvailabilityZone: underPrice[aZone].zone
+					}
+				}
+			};
+			
 			console.log("Error, we tried using " + spotParams.LaunchSpecification.Placement.AvailabilityZone + " instead.");
 			if(numSpots > 20){
 				makeSpot(spotParams, numSpots - 10);
